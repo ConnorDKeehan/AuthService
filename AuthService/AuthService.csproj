@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>ConnorDKeehan.AuthService</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>ConnorDKeehan</Authors>
+    <Description>Quick boot auth service for SQLServer with support for google/apple login</Description>
+    <PackageTags>auth jwt oauth google apple sqlserver bcrypt</PackageTags>
+    <RepositoryUrl>https://github.com/ConnorDKeehan/AuthService</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.69.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.14" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+  </ItemGroup>
+
+</Project>
