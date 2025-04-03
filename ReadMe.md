@@ -1,4 +1,4 @@
-Currently ths package requires a few things:
+Currently this package requires a few things:
 A Logins table with the required columns created in your database.
 
 Some appsettings to be set, particularly:
