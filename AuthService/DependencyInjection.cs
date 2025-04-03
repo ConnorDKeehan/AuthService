@@ -29,11 +29,9 @@ public static class DependencyInjection
             .AddApplicationPart(typeof(AuthController).Assembly)
             .AddControllersAsServices();
 
-        // Register your DbContext
         services.AddDbContext<AuthContext>(options =>
             options.UseSqlServer(connectionString));
 
-        //Register repos
         services.AddScoped<IAuthService, Services.AuthService>();
         services.AddScoped<ILoginsRepository, LoginsRepository>();
         services.AddScoped<ITokenValidationService, TokenValidationService>();
