@@ -16,5 +16,4 @@ And if you'd like to allow login with google account:
 
 
 Similarly for Apple login you will need:
-
-"Auth:AppleClientId"
+1. "Auth:AppleClientId"
