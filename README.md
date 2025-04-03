@@ -1,6 +1,6 @@
 Currently this package requires a few things:
 A Logins table with the required columns created in your database.
-```
+``` sql
 CREATE TABLE Logins (
     Id INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
     Username NVARCHAR(100) NOT NULL,
