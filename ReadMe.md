@@ -1,5 +1,3 @@
-#Read me
-
 Currently ths package requires a few things:
 A Logins table with the required columns created in your database.
 
