@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using AuthService.Extensions;
+using AuthService.Models.Responses;
 
 namespace AuthService.Controllers;
 
@@ -23,19 +25,19 @@ public class AuthController(IAuthService authService) : ControllerBase
     }
 
     [HttpPost("Login")]
-    public async Task<ActionResult<AccessTokenResponse>> Login([FromBody] LoginRequest request)
+    public async Task<ActionResult<TokenResponse>> Login([FromBody] LoginRequest request)
     {
         var result = await authService.LoginAsync(request);
 
         return Ok(result);
     }
 
-    [HttpPost("RefreshAccessToken")]
-    [Authorize]
-    public async Task<ActionResult<AccessTokenResponse>> RefreshAccessToken([FromBody] string? pushNotificationToken)
+    [HttpPost("RefreshTokens")]
+    public async Task<ActionResult<TokenResponse>> RefreshTokens([FromBody] RefreshTokensRequest request)
     {
         var loginId = int.Parse(User.FindFirstValue("LoginId")!);
-        var result = await authService.RefreshTokenAsync(loginId, pushNotificationToken);
+        Guid deviceId = User.FindFirstValue("DeviceId")?.TryParseGuid() ?? Guid.NewGuid();
+        var result = await authService.RefreshTokensAsync(loginId, request.RefreshToken, request.PushNotificationToken, deviceId);
         return Ok(result);
     }
 
@@ -51,9 +53,20 @@ public class AuthController(IAuthService authService) : ControllerBase
     }
 
     [HttpPost("LoginWithSocial")]
-    public async Task<IActionResult> LoginWithSocial([FromBody] LoginWithSocialRequest request)
+    public async Task<ActionResult<TokenResponse>> LoginWithSocial([FromBody] LoginWithSocialRequest request)
     {
         var token = await authService.LoginWithSocialAsync(request);
         return Ok(token);
+    }
+
+    [HttpPost("UpdateMetadata")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> UpdateMetadata([FromBody] string metadata)
+    {
+        var loginId = int.Parse(User.FindFirstValue("LoginId")!);
+        await authService.UpdateMetadataAsync(loginId, metadata);
+
+        return NoContent();
     }
 }

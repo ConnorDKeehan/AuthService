@@ -1,0 +1,22 @@
+CREATE TABLE Logins (
+    Id INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+    Username NVARCHAR(100) NOT NULL,
+    Email NVARCHAR(100) NULL,
+    Password NVARCHAR(200) NOT NULL,
+    AccessTokenVersion INT NOT NULL,
+    Deleted BIT NOT NULL,
+    PushNotificationToken NVARCHAR(200) NULL,
+    SocialLoginIdentifier NVARCHAR(100) NULL,
+    DateCreatedUtc DATETIME2,
+    Metadata NVARCHAR(MAX) NULL
+)
+
+CREATE TABLE RefreshTokens (
+    Id INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+    LoginId INT NOT NULL REFERENCES Logins(Id),
+    Token NVARCHAR(200) NOT NULL UNIQUE,
+    DeviceId UNIQUEIDENTIFIER NOT NULL,
+    DateCreatedUtc DATETIME2 NOT NULL,
+    DateExpiryUtc DATETIME2 NOT NULL,
+    Revoked BIT NOT NULL
+)

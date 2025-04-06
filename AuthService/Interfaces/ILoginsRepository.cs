@@ -11,5 +11,6 @@ public interface ILoginsRepository
     Task<Login> GetLoginByIdAsync(int id);
     Task<Login?> GetLoginBySocialIdentifierAsync(string socialIdentifier);
     Task<Login?> GetLoginByUsernameAsync(string username);
+    Task UpdateMetadataAsync(int loginId, string metadata);
     Task UpdatePushNotificationTokenAsync(int loginId, string pushNotificationToken);
 }

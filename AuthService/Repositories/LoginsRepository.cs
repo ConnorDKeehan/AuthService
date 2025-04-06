@@ -74,4 +74,17 @@ public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
 
         await dbContext.SaveChangesAsync();
     }
+
+    public async Task UpdateMetadataAsync(int loginId, string metadata)
+    {
+        var login = await dbContext.FindAsync<Login>(loginId);
+
+        if(login == null)
+        {
+            throw new KeyNotFoundException($"LoginId: {loginId} not found");
+        }
+
+        login.Metadata = metadata;
+        await dbContext.SaveChangesAsync();
+    }
 }

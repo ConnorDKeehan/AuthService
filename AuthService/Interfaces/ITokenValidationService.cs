@@ -1,9 +1,8 @@
 ﻿using System.Security.Claims;
 
-namespace AuthService.Interfaces
+namespace AuthService.Interfaces;
+
+public interface ITokenValidationService
 {
-    public interface ITokenValidationService
-    {
-        Task<bool> ValidateAsync(ClaimsPrincipal? principal);
-    }
+    Task<bool> ValidateAsync(ClaimsPrincipal? principal);
 }

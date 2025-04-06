@@ -24,6 +24,8 @@ public static class DependencyInjection
         string jwtIssuer = GetAndValidateConfigValue("Auth:Jwt:Issuer", configuration);
         string expiryTimeMinutes = GetAndValidateConfigValue("Auth:Jwt:ExpiryTimeMinutes", configuration);
         string connectionString = GetAndValidateConfigValue("Auth:ConnectionString", configuration);
+        string refreshToken = GetAndValidateConfigValue("Auth:RefreshTokenHmacKey", configuration); 
+        string refreshTokenExpiryTime = GetAndValidateConfigValue("Auth:RefreshTokenExpiryTimeDays", configuration);
 
         services.AddControllers()
             .AddApplicationPart(typeof(AuthController).Assembly)
@@ -34,6 +36,7 @@ public static class DependencyInjection
 
         services.AddScoped<IAuthService, Services.AuthService>();
         services.AddScoped<ILoginsRepository, LoginsRepository>();
+        services.AddScoped<IRefreshTokensRepository, RefreshTokensRepository>();
         services.AddScoped<ITokenValidationService, TokenValidationService>();
 
         services.AddAuthentication(options =>

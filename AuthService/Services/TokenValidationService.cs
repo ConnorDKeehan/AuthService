@@ -16,6 +16,6 @@ public class TokenValidationService(ILoginsRepository loginsRepository) : IToken
 
         var user = await loginsRepository.GetLoginByIdAsync(loginId);
 
-        return user != null && user.TokenVersion == tokenVersion;
+        return user != null && user.AccessTokenVersion == tokenVersion;
     }
 }

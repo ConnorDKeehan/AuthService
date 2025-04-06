@@ -10,6 +10,8 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using System.Security.Cryptography;
+using AuthService.Models.Responses;
 
 namespace AuthService.Services;
 
@@ -17,14 +19,16 @@ public class AuthService : IAuthService
 {
     private readonly IConfiguration configuration;
     private readonly ILoginsRepository loginsRepository;
+    private readonly IRefreshTokensRepository refreshTokensRepository;
     private readonly string? GoogleClientId;
     private readonly string? GoogleClientSecret;
     private readonly string? AppleClientId;
 
-    public AuthService(IConfiguration configuration, ILoginsRepository loginsRepository)
+    public AuthService(IConfiguration configuration, ILoginsRepository loginsRepository, IRefreshTokensRepository refreshTokensRepository)
     {
         this.configuration = configuration;
         this.loginsRepository = loginsRepository;
+        this.refreshTokensRepository = refreshTokensRepository;
         GoogleClientId = configuration["Auth:GoogleClientId"];
         GoogleClientSecret = configuration["Auth:GoogleClientSecret"];
         AppleClientId = configuration["Auth:AppleClientId"];
@@ -32,12 +36,9 @@ public class AuthService : IAuthService
 
     public async Task RegisterAsync(RegisterRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Email))
-        {
-            request.Email = null;
-        }
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email;
 
-        if (await loginsRepository.DoesThisUserAlreadyExistAsync(request.Username, request.Email))
+        if (await loginsRepository.DoesThisUserAlreadyExistAsync(request.Username, email))
         {
             throw new ArgumentException("Username already taken");
         }
@@ -47,18 +48,18 @@ public class AuthService : IAuthService
         var login = new Login
         {
             Username = request.Username,
-            Email = request.Email,
+            Email = email,
             Password = hashedPassword,
             PushNotificationToken = request.PushNotificationToken,
             Deleted = false,
-            TokenVersion = 1,
-            DateCreated = DateTimeOffset.Now,
+            AccessTokenVersion = 1,
+            DateCreatedUtc = DateTime.UtcNow,
         };
 
         await loginsRepository.AddLoginAsync(login);
     }
 
-    public async Task<string> LoginAsync(LoginRequest request)
+    public async Task<TokenResponse> LoginAsync(LoginRequest request)
     {
         var login = await loginsRepository.GetLoginByUsernameAsync(request.Username);
 
@@ -72,11 +73,16 @@ public class AuthService : IAuthService
             await loginsRepository.UpdatePushNotificationTokenAsync(login.Id, request.PushNotificationToken);
         }
 
-        return GenerateJwtToken(login);
+        var deviceId = Guid.NewGuid();
+        var result = await GenerateAndSaveTokensAsync(login, deviceId);
+
+        return result;
     }
 
-    public async Task<string> RefreshTokenAsync(int loginId, string? pushNotificationToken)
+    public async Task<TokenResponse> RefreshTokensAsync(int loginId, string refreshToken, string? pushNotificationToken, Guid deviceId)
     {
+        await EnsureRefreshTokenIsValid(refreshToken, loginId);
+
         var login = await loginsRepository.GetLoginByIdAsync(loginId);
 
         if (!string.IsNullOrWhiteSpace(pushNotificationToken))
@@ -84,10 +90,12 @@ public class AuthService : IAuthService
             await loginsRepository.UpdatePushNotificationTokenAsync(login.Id, pushNotificationToken);
         }
 
-        return GenerateJwtToken(login);
+        var result = await GenerateAndSaveTokensAsync(login, deviceId);
+
+        return result;
     }
 
-    public async Task<string> LoginWithSocialAsync(LoginWithSocialRequest request)
+    public async Task<TokenResponse> LoginWithSocialAsync(LoginWithSocialRequest request)
     {
         string? userEmail;
         string? socialLoginIdentifier = null;
@@ -145,14 +153,28 @@ public class AuthService : IAuthService
                 PushNotificationToken = request.PushNotificationToken,
                 SocialLoginIdentifier = socialLoginIdentifier,
                 Deleted = false,
-                TokenVersion = 1,
-                DateCreated = DateTimeOffset.Now,
+                AccessTokenVersion = 1,
+                DateCreatedUtc = DateTime.UtcNow,
             };
             await loginsRepository.AddLoginAsync(userLogin);
         }
 
-        var jwtToken = GenerateJwtToken(userLogin);
-        return jwtToken;
+        var tokenResponse = await GenerateAndSaveTokensAsync(userLogin, Guid.NewGuid());
+        return tokenResponse;
+    }
+
+    private async Task EnsureRefreshTokenIsValid(string refreshToken, int loginId)
+    {
+        var hashedToken = HashToken(refreshToken);
+
+        var matchedRefreshToken = await refreshTokensRepository.GetRefreshTokenByHashAndLoginIdAsync(hashedToken, loginId);
+
+        if(matchedRefreshToken == null || 
+            matchedRefreshToken.DateExpiryUtc < DateTime.UtcNow || 
+            matchedRefreshToken.Revoked == true)
+        {
+            throw new UnauthorizedAccessException("Refresh Token is invalid");
+        } 
     }
 
     private async Task<string> ExchangeCodeForIdTokenAsync(string authCode)
@@ -186,6 +208,11 @@ public class AuthService : IAuthService
         await loginsRepository.DeleteLoginAsync(id);
     }
 
+    public async Task UpdateMetadataAsync(int loginId, string metadata)
+    {
+        await loginsRepository.UpdateMetadataAsync(loginId, metadata);
+    }
+
     private async Task<ClaimsPrincipal> ValidateAppleIdTokenAsync(string appleIdToken)
     {
         var handler = new JwtSecurityTokenHandler();
@@ -208,7 +235,18 @@ public class AuthService : IAuthService
         return claimsPrincipal;
     }
 
-    private string GenerateJwtToken(Login user)
+    private async Task<TokenResponse> GenerateAndSaveTokensAsync(Login login, Guid deviceId)
+    {
+        var accessToken = GenerateJwtToken(login, deviceId);
+        var refreshToken = GenerateRefreshToken();
+        var hashedRefreshToken = HashToken(refreshToken);
+
+        var expiryTimeDays = configuration.GetValue<int>("Auth:RefreshTokenExpiryTimeDays");
+        await refreshTokensRepository.UpdateRefreshTokenByLoginAndDevice(hashedRefreshToken, deviceId, login.Id, expiryTimeDays);
+        return new TokenResponse(accessToken, refreshToken);
+    }
+
+    private string GenerateJwtToken(Login user, Guid deviceId)
     {
         //These are all validated in DI to not be null.
         string jwtIssuer = configuration["Auth:Jwt:Issuer"]!;
@@ -225,7 +263,8 @@ public class AuthService : IAuthService
             new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim("LoginId", user.Id.ToString()),
-            new Claim("TokenVersion", user.TokenVersion.ToString())
+            new Claim("TokenVersion", user.AccessTokenVersion.ToString()),
+            new Claim("DeviceId", deviceId.ToString())
         };
 
         var token = new JwtSecurityToken(
@@ -236,5 +275,24 @@ public class AuthService : IAuthService
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static string GenerateRefreshToken()
+    {
+        var randomBytes = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomBytes);
+        return Convert.ToBase64String(randomBytes);
+    }
+
+    private string HashToken(string token)
+    {
+        var refreshTokenHmacKey = configuration["Auth:RefreshTokenHmacKey"]!;
+        var keyBytes = Encoding.UTF8.GetBytes(refreshTokenHmacKey);
+        var tokenBytes = Encoding.UTF8.GetBytes(token);
+
+        using var hmac = new HMACSHA256(keyBytes);
+        var hash = hmac.ComputeHash(tokenBytes);
+        return Convert.ToBase64String(hash);
     }
 }
