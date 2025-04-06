@@ -14,7 +14,7 @@ public class EmailService(SmtpSettings settings) : IEmailService
             From = new MailAddress(settings.From),
             Subject = subject,
             Body = body,
-            IsBodyHtml = settings.IsBodyHtml,
+            IsBodyHtml = false,
         };
 
         message.To.Add(to);

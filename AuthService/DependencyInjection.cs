@@ -110,11 +110,10 @@ public static class DependencyInjection
             var password = GetAndValidateConfigValue<string>("Auth:Smtp:Password", configuration);
             var from = GetAndValidateConfigValue<string>("Auth:Smtp:From", configuration);
             var enableSSl = GetAndValidateConfigValue<bool>("Auth:Smtp:EnableSsl", configuration);
-            var isBodyHtml = GetAndValidateConfigValue<bool>("Auth:Smtp:IsBodyHtml", configuration);
 
             services.AddScoped<IEmailService>(sp =>
             {
-                var settings = new SmtpSettings(host, port, username, password, from, enableSSl, isBodyHtml);
+                var settings = new SmtpSettings(host, port, username, password, from, enableSSl);
                 return new EmailService(settings);
             });
 
