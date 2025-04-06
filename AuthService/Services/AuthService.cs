@@ -105,8 +105,8 @@ public class AuthService : IAuthService
     public async Task<TokenResponse> LoginWithSocialAsync(LoginWithSocialRequest request)
     {
         string? userEmail;
-        string? socialLoginIdentifier = null;
-        Login? userLogin = null;
+        string? socialLoginIdentifier;
+        Login? userLogin;
 
         if(!Enum.TryParse<SocialLoginProvidersEnum>(request.Provider, ignoreCase: true, out var provider))
         {
