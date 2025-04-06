@@ -15,6 +15,5 @@ public interface IAuthService
     Task<int> SendVerifyEmailCodeAsync(int loginId);
     Task UpdateMetadataAsync(int loginId, string metadata);
     Task<TokenResponse> UpdatePasswordWithCodeAsync(UpdatePasswordWithCodeRequest request);
-    Task<TokenResponse> UpdatePasswordWithPasswordAsync(int loginId, UpdatePasswordWithPasswordRequest updatePasswordRequest, Guid deviceId);
     Task VerifyEmailAsync(int loginId, string code, int twoFactorAuthCodeId);
 }

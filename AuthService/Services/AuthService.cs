@@ -12,9 +12,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using AuthService.Models.Responses;
-using Azure.Core;
 using AuthService.Models.Enums;
-using Microsoft.AspNetCore.Http;
 using AuthService.Extensions;
 
 namespace AuthService.Services;
@@ -222,27 +220,7 @@ public class AuthService : IAuthService
         await VerifyLoginPasswordAsync(loginId, password);
 
         await loginsRepository.DeleteLoginAsync(loginId);
-    }
-
-    public async Task<TokenResponse> UpdatePasswordWithPasswordAsync(int loginId, UpdatePasswordWithPasswordRequest updatePasswordRequest, Guid deviceId)
-    {
-        await VerifyLoginPasswordAsync(loginId, updatePasswordRequest.oldPassword);
-        var login = await loginsRepository.GetLoginByIdAsync(loginId);
-
-        if(login.Email != null)
-        {
-            throw new Exception("Updating password with password is only avaliable for users without emails for 2FA");
-        }
-
-        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(updatePasswordRequest.newPassword);
-
-        await UpdatePasswordAsync(loginId, hashedPassword);
-        var result = await GenerateAndSaveTokensAsync(login, deviceId);
-
-        return result;
-    }
-
-    
+    }    
 
     public async Task UpdateMetadataAsync(int loginId, string metadata)
     {

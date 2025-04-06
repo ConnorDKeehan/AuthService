@@ -52,18 +52,6 @@ public class AuthController(IAuthService authService, IEmailService emailService
         return NoContent();
     }
 
-    [HttpPost("UpdatePasswordWithPassword")]
-    [Authorize]
-    public async Task<ActionResult<TokenResponse>> UpdatePasswordWithPassword([FromBody] UpdatePasswordWithPasswordRequest request)
-    {
-        var loginId = GetHttpLoginId();
-        Guid deviceId = User.FindFirstValue("DeviceId")?.TryParseGuid() ?? Guid.NewGuid();
-
-        var tokens = await authService.UpdatePasswordWithPasswordAsync(loginId, request, deviceId);
-
-        return Ok(tokens);
-    }
-
     [HttpPost("SendForgotPasswordCode")]
     public async Task<ActionResult<int>> SendForgotPasswordCode([FromBody] SendForgotPasswordCodeRequest request)
     {
