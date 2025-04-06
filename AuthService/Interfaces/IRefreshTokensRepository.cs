@@ -5,5 +5,6 @@ namespace AuthService.Interfaces;
 public interface IRefreshTokensRepository
 {
     Task<RefreshToken?> GetRefreshTokenByHashAndLoginIdAsync(string hashedToken, int loginId);
-    Task UpdateRefreshTokenByLoginAndDevice(string hashedToken, Guid deviceId, int loginId, int expiryTimeDays);
+    Task RevokeAllValidTokensByLoginIdAsync(int loginId);
+    Task UpdateRefreshTokenByLoginAndDeviceAsync(string hashedToken, Guid deviceId, int loginId, int expiryTimeDays);
 }

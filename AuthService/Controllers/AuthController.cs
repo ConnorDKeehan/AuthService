@@ -13,7 +13,7 @@ namespace AuthService.Controllers;
 [ApiController]
 [AllowAnonymous]
 [Route("[controller]")]
-public class AuthController(IAuthService authService) : ControllerBase
+public class AuthController(IAuthService authService, IEmailService emailService) : ControllerBase
 {
     [HttpPost("Register")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -35,21 +35,70 @@ public class AuthController(IAuthService authService) : ControllerBase
     [HttpPost("RefreshTokens")]
     public async Task<ActionResult<TokenResponse>> RefreshTokens([FromBody] RefreshTokensRequest request)
     {
-        var loginId = int.Parse(User.FindFirstValue("LoginId")!);
+        var loginId = GetHttpLoginId();
         Guid deviceId = User.FindFirstValue("DeviceId")?.TryParseGuid() ?? Guid.NewGuid();
         var result = await authService.RefreshTokensAsync(loginId, request.RefreshToken, request.PushNotificationToken, deviceId);
         return Ok(result);
     }
 
-    [HttpDelete("DeleteLogin")]
+    [HttpPost("DeleteLogin")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteLogin()
+    public async Task<IActionResult> DeleteLogin([FromBody] string password)
     {
-        var loginId = int.Parse(User.FindFirstValue("LoginId")!);
-        await authService.DeleteLoginAsync(loginId);
+        var loginId = GetHttpLoginId();
+        await authService.DeleteLoginAsync(loginId, password);
 
         return NoContent();
+    }
+
+    [HttpPost("UpdatePasswordWithPassword")]
+    [Authorize]
+    public async Task<ActionResult<TokenResponse>> UpdatePasswordWithPassword([FromBody] UpdatePasswordWithPasswordRequest request)
+    {
+        var loginId = GetHttpLoginId();
+        Guid deviceId = User.FindFirstValue("DeviceId")?.TryParseGuid() ?? Guid.NewGuid();
+
+        var tokens = await authService.UpdatePasswordWithPasswordAsync(loginId, request, deviceId);
+
+        return Ok(tokens);
+    }
+
+    [HttpPost("SendForgotPasswordCode")]
+    public async Task<ActionResult<int>> SendForgotPasswordCode([FromBody] SendForgotPasswordCodeRequest request)
+    {
+        var result = await authService.SendForgotPasswordCodeAsync(request);
+
+        return Ok(result);
+    }
+
+    [HttpPost("SendVerifyEmailCode")]
+    [Authorize]
+    public async Task<ActionResult<int>> SendVerifyEmailCode()
+    {
+        var loginId = GetHttpLoginId();
+
+        var result = await authService.SendVerifyEmailCodeAsync(loginId);
+
+        return Ok(result);
+    }
+
+    [HttpPost("VerifyEmail")]
+    [Authorize]
+    public async Task<IActionResult> VerifyEmail(VerifyEmailRequest request)
+    {
+        var loginId = GetHttpLoginId();
+        await authService.VerifyEmailAsync(loginId, request.code, request.twoFactorAuthCodeId);
+
+        return NoContent();
+    }
+
+    [HttpPost("UpdatePasswordWithCode")]
+    public async Task<IActionResult> UpdatePasswordWithCode([FromBody] UpdatePasswordWithCodeRequest request)
+    {
+        var result = await authService.UpdatePasswordWithCodeAsync(request);
+
+        return Ok(result);
     }
 
     [HttpPost("LoginWithSocial")]
@@ -64,9 +113,19 @@ public class AuthController(IAuthService authService) : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateMetadata([FromBody] string metadata)
     {
-        var loginId = int.Parse(User.FindFirstValue("LoginId")!);
+        var loginId = GetHttpLoginId();
         await authService.UpdateMetadataAsync(loginId, metadata);
 
         return NoContent();
+    }
+
+    private int GetHttpLoginId()
+    {
+        if (!int.TryParse(User.FindFirstValue("LoginId"), out int loginId))
+        {
+            throw new UnauthorizedAccessException("LoginId claim missing or invalid.");
+        }
+
+        return loginId;
     }
 }

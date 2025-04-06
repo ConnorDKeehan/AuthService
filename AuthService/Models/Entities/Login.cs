@@ -5,6 +5,7 @@ public class Login
     public int Id { get; set; }
     public required string Username { get; set; }
     public string? Email { get; set; }
+    public bool EmailVerified { get; set; }
     public required string Password { get; set; }
     public int AccessTokenVersion { get; set; }
     public required bool Deleted { get; set; }

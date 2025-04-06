@@ -11,4 +11,5 @@ public class AuthContext : DbContext
 
     public DbSet<Login> Logins { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
+    public DbSet<TwoFactorAuthCode> TwoFactorAuthCodes { get; set; }
 }

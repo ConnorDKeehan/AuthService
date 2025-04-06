@@ -20,3 +20,14 @@ CREATE TABLE RefreshTokens (
     DateExpiryUtc DATETIME2 NOT NULL,
     Revoked BIT NOT NULL
 )
+
+CREATE TABLE TwoFactorAuthCodes (
+    Id INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+    LoginId INT NOT NULL REFERENCES Logins(Id),
+    Code NVARCHAR(50) NOT NULL,
+    Purpose NVARCHAR(50) NOT NULL,
+    DateCreatedUtc DATETIME2 NOT NULL,
+    DateExpiryUtc DATETIME2 NOT NULL,
+    DateUsedUtc DATETIME2 NULL,
+    Revoked BIT NOT NULL
+)

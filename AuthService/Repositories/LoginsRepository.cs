@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Repositories;
 
-public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
+public class LoginsRepository(AuthContext dbContext, IRefreshTokensRepository refreshTokensRepository) : ILoginsRepository
 {
     public async Task<bool> DoesThisUserAlreadyExistAsync(string username, string? email)
     {
@@ -47,7 +47,7 @@ public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
 
         if(login == null)
         {
-            throw new KeyNotFoundException("Login doesn't exist");
+            throw new KeyNotFoundException($"No Login Found with Id: {id}");
         }
 
         return login;
@@ -55,6 +55,7 @@ public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
 
     public async Task DeleteLoginAsync(int id)
     {
+        using var transaction = await dbContext.Database.BeginTransactionAsync();
         var login = await dbContext.FindAsync<Login>(id);
 
         if(login == null)
@@ -63,7 +64,14 @@ public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
         }
 
         login.Deleted = true;
+
+        //This invalidates all current access tokens
+        login.AccessTokenVersion++;
+
+        await refreshTokensRepository.RevokeAllValidTokensByLoginIdAsync(id);
+
         await dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 
     public async Task UpdatePushNotificationTokenAsync(int loginId, string pushNotificationToken)
@@ -86,5 +94,34 @@ public class LoginsRepository(AuthContext dbContext) : ILoginsRepository
 
         login.Metadata = metadata;
         await dbContext.SaveChangesAsync();
+    }
+
+    public async Task UpdatePasswordAsync(int loginId, string newHashedPassword)
+    {
+        using var transaction = await dbContext.Database.BeginTransactionAsync();
+        var login = await dbContext.FindAsync<Login>(loginId);
+
+        if (login == null)
+        {
+            throw new KeyNotFoundException($"LoginId: {loginId} not found");
+        }
+
+        login.AccessTokenVersion++;
+        await refreshTokensRepository.RevokeAllValidTokensByLoginIdAsync(loginId);
+
+        await dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
+
+    public async Task MarkEmailAsVerifiedAsync(int loginId)
+    {
+        var login = await dbContext.FindAsync<Login>(loginId);
+
+        if (login == null)
+        {
+            throw new KeyNotFoundException($"LoginId: {loginId} not found");
+        }
+
+        login.EmailVerified = true;
     }
 }

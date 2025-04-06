@@ -12,6 +12,10 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 using AuthService.Models.Responses;
+using Azure.Core;
+using AuthService.Models.Enums;
+using Microsoft.AspNetCore.Http;
+using AuthService.Extensions;
 
 namespace AuthService.Services;
 
@@ -20,15 +24,20 @@ public class AuthService : IAuthService
     private readonly IConfiguration configuration;
     private readonly ILoginsRepository loginsRepository;
     private readonly IRefreshTokensRepository refreshTokensRepository;
+    private readonly ITwoFactorAuthCodesRepository twoFactorAuthCodesRepository;
+    private readonly IEmailService emailService;
     private readonly string? GoogleClientId;
     private readonly string? GoogleClientSecret;
     private readonly string? AppleClientId;
 
-    public AuthService(IConfiguration configuration, ILoginsRepository loginsRepository, IRefreshTokensRepository refreshTokensRepository)
+    public AuthService(IConfiguration configuration, ILoginsRepository loginsRepository, IRefreshTokensRepository refreshTokensRepository,
+        ITwoFactorAuthCodesRepository twoFactorAuthCodesRepository, IEmailService emailService)
     {
         this.configuration = configuration;
         this.loginsRepository = loginsRepository;
         this.refreshTokensRepository = refreshTokensRepository;
+        this.twoFactorAuthCodesRepository = twoFactorAuthCodesRepository;
+        this.emailService = emailService;
         GoogleClientId = configuration["Auth:GoogleClientId"];
         GoogleClientSecret = configuration["Auth:GoogleClientSecret"];
         AppleClientId = configuration["Auth:AppleClientId"];
@@ -101,9 +110,14 @@ public class AuthService : IAuthService
         string? socialLoginIdentifier = null;
         Login? userLogin = null;
 
-        switch (request.Provider?.ToLower())
+        if(!Enum.TryParse<SocialLoginProvidersEnum>(request.Provider, ignoreCase: true, out var provider))
         {
-            case "google":
+            throw new ArgumentException($"{request.Provider} is not a valid provider");
+        }
+
+        switch (provider)
+        {
+            case SocialLoginProvidersEnum.Google:
 
                 if(GoogleClientId.IsNullOrEmpty() || GoogleClientSecret.IsNullOrEmpty())
                 {
@@ -125,7 +139,7 @@ public class AuthService : IAuthService
                 userLogin = await loginsRepository.GetLoginByEmailAsync(userEmail);
                 break;
 
-            case "apple":
+            case SocialLoginProvidersEnum.Apple:
                 if (AppleClientId.IsNullOrEmpty())
                 {
                     throw new ArgumentNullException("Auth:AppleClientId must be in appsettings and not null or empty");
@@ -140,7 +154,7 @@ public class AuthService : IAuthService
                 break;
 
             default:
-                throw new Exception("Unsupported social provider");
+                throw new NotImplementedException("No setup for the provider");
         }
 
         if (userLogin == null)
@@ -165,7 +179,7 @@ public class AuthService : IAuthService
 
     private async Task EnsureRefreshTokenIsValid(string refreshToken, int loginId)
     {
-        var hashedToken = HashToken(refreshToken);
+        var hashedToken = HashString(refreshToken);
 
         var matchedRefreshToken = await refreshTokensRepository.GetRefreshTokenByHashAndLoginIdAsync(hashedToken, loginId);
 
@@ -203,14 +217,166 @@ public class AuthService : IAuthService
         return idTokenElement.GetString()!;
     }
 
-    public async Task DeleteLoginAsync(int id)
+    public async Task DeleteLoginAsync(int loginId, string password)
     {
-        await loginsRepository.DeleteLoginAsync(id);
+        await VerifyLoginPasswordAsync(loginId, password);
+
+        await loginsRepository.DeleteLoginAsync(loginId);
     }
+
+    public async Task<TokenResponse> UpdatePasswordWithPasswordAsync(int loginId, UpdatePasswordWithPasswordRequest updatePasswordRequest, Guid deviceId)
+    {
+        await VerifyLoginPasswordAsync(loginId, updatePasswordRequest.oldPassword);
+        var login = await loginsRepository.GetLoginByIdAsync(loginId);
+
+        if(login.Email != null)
+        {
+            throw new Exception("Updating password with password is only avaliable for users without emails for 2FA");
+        }
+
+        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(updatePasswordRequest.newPassword);
+
+        await UpdatePasswordAsync(loginId, hashedPassword);
+        var result = await GenerateAndSaveTokensAsync(login, deviceId);
+
+        return result;
+    }
+
+    
 
     public async Task UpdateMetadataAsync(int loginId, string metadata)
     {
         await loginsRepository.UpdateMetadataAsync(loginId, metadata);
+    }
+
+    public async Task<int> SendForgotPasswordCodeAsync(SendForgotPasswordCodeRequest request)
+    {
+        if (request.username == null && request.email == null)
+        {
+            throw new ArgumentException("Must provide either email or username");
+        }
+
+        var login = request.username != null
+            ? await loginsRepository.GetLoginByUsernameAsync(request.username)
+            : await loginsRepository.GetLoginByUsernameAsync(request.email!);
+
+        if (login == null)
+        {
+            throw new ArgumentException("User with that username/email doesn't exist");
+        }
+
+        if(login.Email == null)
+        {
+            throw new Exception("This user is not setup with an email");
+        }
+
+        var codeId = await SendTwoFactorAuthCodeAsync(login.Id, login.Email, TwoFactorAuthCodePurposesEnum.ResetPassword);
+
+        return codeId;
+    }
+
+    public async Task<int> SendVerifyEmailCodeAsync(int loginId)
+    {
+        var login = await loginsRepository.GetLoginByIdAsync(loginId);
+
+        if (login.Email == null)
+        {
+            throw new Exception("This user is not setup with an email");
+        }
+
+        var codeId = await SendTwoFactorAuthCodeAsync(login.Id, login.Email, TwoFactorAuthCodePurposesEnum.VerifyEmail);
+
+        return codeId;
+    }
+
+    public async Task<TokenResponse> UpdatePasswordWithCodeAsync(UpdatePasswordWithCodeRequest request)
+    {
+        await ValidateAndRevokeTwoFactorAuthCodeAsync(request.code, request.twoFactorAuthCodeId, TwoFactorAuthCodePurposesEnum.ResetPassword, null);
+
+        var twoFactorAuthCode = await twoFactorAuthCodesRepository.GetTwoFactorAuthCodeByIdAsync(request.twoFactorAuthCodeId);
+
+        await UpdatePasswordAsync(twoFactorAuthCode.LoginId, request.newPassword);
+        var login = await loginsRepository.GetLoginByIdAsync(twoFactorAuthCode.LoginId);
+        var result = await GenerateAndSaveTokensAsync(login, Guid.NewGuid());
+
+        return result;
+    }
+
+    public async Task VerifyEmailAsync(int loginId, string code, int twoFactorAuthCodeId)
+    {
+        var login = await loginsRepository.GetLoginByIdAsync(loginId);
+        await ValidateAndRevokeTwoFactorAuthCodeAsync(code, twoFactorAuthCodeId, TwoFactorAuthCodePurposesEnum.VerifyEmail, login);
+
+        await loginsRepository.MarkEmailAsVerifiedAsync(loginId);
+    }
+
+    private async Task ValidateAndRevokeTwoFactorAuthCodeAsync(string code, int twoFactorAuthCodeId, TwoFactorAuthCodePurposesEnum purpose, Login? login)
+    {
+        var twoFactorAuthCode = await twoFactorAuthCodesRepository.GetTwoFactorAuthCodeByIdAsync(twoFactorAuthCodeId);
+
+        if (twoFactorAuthCode.DateExpiryUtc < DateTime.UtcNow) {
+            throw new ArgumentException("Code has expired");
+        }
+
+        if (twoFactorAuthCode.Revoked)
+        {
+            throw new ArgumentException("Code has been already been used or otherwise revoked");
+        }
+
+        if (Enum.Parse<TwoFactorAuthCodePurposesEnum>(twoFactorAuthCode.Purpose) != purpose) 
+        {
+            throw new ArgumentException("Code was not made for the purpose it is being used for");
+        }
+
+        if(login != null && twoFactorAuthCode.LoginId != login.Id)
+        {
+            throw new UnauthorizedAccessException("Code attempting to be used is for a different login");
+        }
+
+        var hashedCode = HashString(code);
+
+        if (twoFactorAuthCode.Code != hashedCode) 
+        {
+            throw new ArgumentException("Entered 2FA code did not match");
+        }
+
+        await twoFactorAuthCodesRepository.MarkTwoFactorAuthCodeAsUsedAsync(twoFactorAuthCodeId);
+    }
+
+    private async Task UpdatePasswordAsync(int loginId, string password)
+    {
+        var hashedPassword = BCrypt.Net.BCrypt.HashPassword(password);
+
+        await loginsRepository.UpdatePasswordAsync(loginId, hashedPassword);
+    }
+
+    private async Task<int> SendTwoFactorAuthCodeAsync(int loginId, string email, TwoFactorAuthCodePurposesEnum purpose)
+    {
+        var number = RandomNumberGenerator.GetInt32(0, 1_000_000); // 0 to 999999
+        var code = number.ToString("D6");
+        var hashedCode = HashString(code);
+
+        var codeId = await twoFactorAuthCodesRepository.AddTwoFactorAuthCodeAsync(loginId, hashedCode, purpose);
+
+        var emailBody = $"Your one time code is: {code}";
+        await emailService.SendAsync(email, purpose.GetDescription(), emailBody);
+
+        return codeId;
+    }
+
+    private async Task VerifyLoginPasswordAsync(int loginId, string password)
+    {
+        var login = await loginsRepository.GetLoginByIdAsync(loginId);
+
+        if (login == null)
+        {
+            throw new ArgumentException($"Login {loginId} does not exist");
+        }
+
+        if (!BCrypt.Net.BCrypt.Verify(password, login.Password))
+        {
+            throw new ArgumentException("Incorrect password");
+        }
     }
 
     private async Task<ClaimsPrincipal> ValidateAppleIdTokenAsync(string appleIdToken)
@@ -239,10 +405,10 @@ public class AuthService : IAuthService
     {
         var accessToken = GenerateJwtToken(login, deviceId);
         var refreshToken = GenerateRefreshToken();
-        var hashedRefreshToken = HashToken(refreshToken);
+        var hashedRefreshToken = HashString(refreshToken);
 
         var expiryTimeDays = configuration.GetValue<int>("Auth:RefreshTokenExpiryTimeDays");
-        await refreshTokensRepository.UpdateRefreshTokenByLoginAndDevice(hashedRefreshToken, deviceId, login.Id, expiryTimeDays);
+        await refreshTokensRepository.UpdateRefreshTokenByLoginAndDeviceAsync(hashedRefreshToken, deviceId, login.Id, expiryTimeDays);
         return new TokenResponse(accessToken, refreshToken);
     }
 
@@ -285,11 +451,11 @@ public class AuthService : IAuthService
         return Convert.ToBase64String(randomBytes);
     }
 
-    private string HashToken(string token)
+    private string HashString(string value)
     {
         var refreshTokenHmacKey = configuration["Auth:RefreshTokenHmacKey"]!;
         var keyBytes = Encoding.UTF8.GetBytes(refreshTokenHmacKey);
-        var tokenBytes = Encoding.UTF8.GetBytes(token);
+        var tokenBytes = Encoding.UTF8.GetBytes(value);
 
         using var hmac = new HMACSHA256(keyBytes);
         var hash = hmac.ComputeHash(tokenBytes);

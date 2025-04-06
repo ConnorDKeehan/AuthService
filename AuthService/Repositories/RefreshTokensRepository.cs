@@ -19,7 +19,7 @@ public class RefreshTokensRepository(AuthContext dbContext) : IRefreshTokensRepo
         return result;
     }
 
-    public async Task UpdateRefreshTokenByLoginAndDevice(string hashedToken, Guid deviceId, int loginId, int expiryTimeDays) 
+    public async Task UpdateRefreshTokenByLoginAndDeviceAsync(string hashedToken, Guid deviceId, int loginId, int expiryTimeDays) 
     {
         using var transaction = await dbContext.Database.BeginTransactionAsync();
 
@@ -39,5 +39,12 @@ public class RefreshTokensRepository(AuthContext dbContext) : IRefreshTokensRepo
 
         await dbContext.SaveChangesAsync();
         await transaction.CommitAsync();
+    }
+
+    public async Task RevokeAllValidTokensByLoginIdAsync(int loginId)
+    {
+        await dbContext.RefreshTokens
+            .Where(x => x.LoginId == loginId && !x.Revoked && x.DateExpiryUtc > DateTime.UtcNow)
+            .ExecuteUpdateAsync(set => set.SetProperty(x => x.Revoked, true));
     }
 }
