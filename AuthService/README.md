@@ -1,7 +1,3 @@
-This is the host repo for the Nuget package: ConnorDKeehan.AuthService.
-
-You can add the nuget package to your own repo or you can use this project to host the standalone auth api.
-
 Currently this package requires a few things: A Logins table and RefreshTokens table created in your database.
 This script is in the SqlScripts folder of the Nuget package and also below:
 
