@@ -9,7 +9,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>ConnorDKeehan.AuthService</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Version>8.2.1</Version>
+    <Version>8.2.2</Version>
     <Authors>ConnorDKeehan</Authors>
     <Description>Quick boot auth service for SQLServer with support for google/apple login</Description>
     <PackageTags>auth jwt oauth google apple sqlserver bcrypt</PackageTags>
