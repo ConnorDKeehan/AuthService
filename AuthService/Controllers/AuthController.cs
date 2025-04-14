@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using AuthService.Extensions;
 using AuthService.Models.Responses;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace AuthService.Controllers;
 
@@ -35,8 +36,10 @@ public class AuthController(IAuthService authService, IEmailService emailService
     [HttpPost("RefreshTokens")]
     public async Task<ActionResult<TokenResponse>> RefreshTokens([FromBody] RefreshTokensRequest request)
     {
-        var loginId = GetHttpLoginId();
-        Guid deviceId = User.FindFirstValue("DeviceId")?.TryParseGuid() ?? Guid.NewGuid();
+        var jwtToken = GetJwtSecurityTokenFromHeader();
+        var loginId = int.Parse(jwtToken.Claims.FirstOrDefault(x => x.Type == "LoginId")!.Value);
+        var deviceId = Guid.Parse(jwtToken.Claims.FirstOrDefault(c => c.Type == "DeviceId")!.Value);
+
         var result = await authService.RefreshTokensAsync(loginId, request.RefreshToken, request.PushNotificationToken, deviceId);
         return Ok(result);
     }
@@ -115,5 +118,24 @@ public class AuthController(IAuthService authService, IEmailService emailService
         }
 
         return loginId;
+    }
+
+    private JwtSecurityToken GetJwtSecurityTokenFromHeader()
+    {
+        var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+
+        if (authHeader != null && authHeader.StartsWith("Bearer "))
+        {
+            var tokenStr = authHeader.Substring("Bearer ".Length).Trim();
+
+            var handler = new JwtSecurityTokenHandler();
+            if (handler.CanReadToken(tokenStr))
+            {
+                var token = handler.ReadJwtToken(tokenStr);
+                return token;
+            }
+        }
+
+        throw new UnauthorizedAccessException("Must still have an expired access token to refresh tokens");
     }
 }
